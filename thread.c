@@ -142,12 +142,14 @@ void *gearFunc(void *arg){
             gear = 1;
             pthread_mutex_unlock(&mid);
             usleep(30000);
+
         }
         else if(ch == 112 && pedal == 0){
             pthread_mutex_lock(&mid);
             gear = 0;
             pthread_mutex_unlock(&mid);
             usleep(30000);
+
         }
         if (distance < 0 || distance > 30){
             pthread_mutex_lock(&mid);
@@ -165,17 +167,37 @@ void *pedalFunc(void *arg){
     while(1){
         if(gear == 2 && ch == 103){
             pthread_mutex_lock(&mid);
+            pedal = 1;
+            pthread_mutex_unlock(&mid);
+            pthread_mutex_lock(&mid);
             distance++;
             pthread_mutex_unlock(&mid);
             usleep(30000);
+            pthread_mutex_lock(&mid);
+            ch = 0;
+            pthread_mutex_unlock(&mid);
+            usleep(10000);
             printf("%d\n",distance);
         }
         else if(gear == 1 && ch == 103){
             pthread_mutex_lock(&mid);
+            pedal = 1;
+            pthread_mutex_unlock(&mid);
+            pthread_mutex_lock(&mid);
             distance--;
             pthread_mutex_unlock(&mid);
             usleep(30000);
+            pthread_mutex_lock(&mid);
+            ch = 0;
+            pthread_mutex_unlock(&mid);
+            usleep(10000);
             printf("%d\n",distance);
+        }
+        if(ch == 98){
+            pthread_mutex_lock(&mid);
+            pedal = 0;
+            pthread_mutex_unlock(&mid);
+            usleep(10000);
         }
         if (distance < 0 || distance > 30){
             pthread_mutex_lock(&mid);
