@@ -41,7 +41,7 @@ void init_keyboard()
     new_settings = initial_settings;
     new_settings.c_lflag &= ~ICANON;
     new_settings.c_lflag &= ~ECHO;
-    new_settings.c_lflag &= ~ISIG;
+    // new_settings.c_lflag &= ~ISIG;
     new_settings.c_cc[VMIN] = 1;
     new_settings.c_cc[VTIME] = 0;
     tcsetattr(0, TCSANOW, &new_settings);
@@ -107,8 +107,8 @@ int main(){
             ch = readch();
             // printf("you hit %d\n",ch);
             // printf("you hit %c\n",ch);
-            printf("%d\n",gear);
-            printf("%c\n",ch);
+            // printf("%d\n",gear);
+            // printf("%c\n",ch);
         }
         if (crash >= 3){
             break;
@@ -118,7 +118,6 @@ int main(){
     pthread_join(ptGear, NULL);
     pthread_join(ptPedal, NULL);
     pthread_join(ptWarning, NULL);
-
     // pthread_join(ptSteering, NULL);
 
     pthread_mutex_destroy(&mid);
@@ -206,5 +205,4 @@ void *warningFunc(void *arg){
     }
     return NULL;
 }
-
 void *steeringFunc(void *arg){}
