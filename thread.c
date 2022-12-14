@@ -31,7 +31,6 @@
 #define BUZZER 2
 
 pthread_mutex_t mid;
-pthread_mutex_t mch;
 
 int fd_serial ; //UART2 파일 서술자
 int distance = 0;
@@ -40,16 +39,50 @@ int gear = 0; // 0: P, 1: R, 2: D
 int pedal = 0; // 0: Brake, 1: Gas
 float steering;
 int ch = 0;
+int crash = 0;
+
+static const char* UART2_DEV = "/dev/ttyAMA1";
+unsigned char serialRead(const int fd);
+void serialWrite(const int fd, const unsigned char *c);
+
+unsigned char serialRead(const int fd)
+{
+    unsigned char x;
+    if(read (fd, &x, 1) != 1) //read 함수를 통해 1바이트 읽어옴
+        return -1;
+    return x; //읽어온 데이터 반환
+}
+
+void serialWrite(const int fd, const unsigned char *c)
+{
+    write (fd, c, strlen(c));
+}
 
 
-static const char* UART2_DEV = "/dev/ttyAMA1"; //UART2 연결을 위한 장치 파일
-unsigned char serialRead(const int fd); //1Byte 데이터를 수신하는 함수
-void serialWrite(const int fd, const unsigned char *c); //1Byte 데이터를 송신하는 함수
+void readRegister_ADXL345(char registerAddress, int numBytes, char * values)
+{
+
+    values[0] = 0x80 | registerAddress;
+    if(numBytes > 1) values[0] = values[0] | 0x40;
+    digitalWrite(CS_GPIO, LOW);
+    wiringPiSPIDataRW(SPI_CH, values, numBytes + 1);
+    digitalWrite(CS_GPIO, HIGH);
+}
+
+void writeRegister_ADXL345(char address, char value)
+{
+    unsigned char buff[2];
+    buff[0] = address;
+    buff[1] = value;
+    digitalWrite(CS_GPIO, LOW); // Low : CS Active
+    wiringPiSPIDataRW(SPI_CH, buff, 2);
+    digitalWrite(CS_GPIO, HIGH); // High : CS Inactive
+}
+
 void *gearFunc(void *);
 void *pedalFunc(void *);
 void *warningFunc(void *);
 void *steeringFunc(void *);
-
 
 int main(){
     
@@ -65,7 +98,6 @@ int main(){
     pinMode(LED_BACK, OUTPUT);
     pinMode(BUZZER,OUTPUT);
 
-
     unsigned char dat[100]; //데이터 임시 저장 변수
     unsigned char dat2;
     pinMode(CS_GPIO, OUTPUT); //Chip Select OUTPUT
@@ -79,9 +111,13 @@ int main(){
         return 1;
     }
 
+    digitalWrite(BUZZER, LOW);
+    digitalWrite(LED_L, LOW);
+    digitalWrite(LED_R, LOW);
+    digitalWrite(LED_BACK, LOW);
+
     pthread_t ptGear, ptPedal ,ptSteering, ptWarning;
     pthread_mutex_init(&mid, NULL);
-    pthread_mutex_init(&mch, NULL);
 
     pthread_create(&ptGear, NULL, gearFunc, NULL);
     pthread_create(&ptPedal, NULL, pedalFunc, NULL);
@@ -93,45 +129,45 @@ int main(){
         if(digitalRead(P))
         {
             printf("P\n");
-            pthread_mutex_lock(&mch);
+            pthread_mutex_lock(&mid);
             ch = 112;
-            pthread_mutex_unlock(&mch);
+            pthread_mutex_unlock(&mid);
             
             delay(100);
         }
         if(digitalRead(R))
         {
             printf("R\n");
-            pthread_mutex_lock(&mch);
+            pthread_mutex_lock(&mid);
             ch = 114;
-            pthread_mutex_unlock(&mch);
+            pthread_mutex_unlock(&mid);
             delay(100);
         }
         if(digitalRead(D))
         {
             printf("D\n");
-            pthread_mutex_lock(&mch);
+            pthread_mutex_lock(&mid);
             ch = 100;
-            pthread_mutex_unlock(&mch);
+            pthread_mutex_unlock(&mid);
             delay(100);
         }
         if(digitalRead(G))
         {
             printf("G\n");
-            pthread_mutex_lock(&mch);
+            pthread_mutex_lock(&mid);
             ch = 103;
-            pthread_mutex_unlock(&mch);
+            pthread_mutex_unlock(&mid);
             delay(100);
         }
         if(digitalRead(B))
         {
             printf("B\n");
-            pthread_mutex_lock(&mch);
+            pthread_mutex_lock(&mid);
             ch = 98;
-            pthread_mutex_unlock(&mch);
+            pthread_mutex_unlock(&mid);
             delay(100);
         }
-        if (crash >= 3){
+        if (crash >= 4){
             break;
         }
         
@@ -143,49 +179,14 @@ int main(){
     pthread_join(ptSteering, NULL);
 
     pthread_mutex_destroy(&mid);
-    pthread_mutex_destroy(&mch);
 
+    delay(2000);
+    digitalWrite(BUZZER, LOW);
+    digitalWrite(LED_L, LOW);
+    digitalWrite(LED_R, LOW);
+    digitalWrite(LED_BACK, LOW);
     return 0;
 }
-
-
-//1Byte 데이터를 수신하는 함수
-unsigned char serialRead(const int fd)
-{
-    unsigned char x;
-    if(read (fd, &x, 1) != 1) //read 함수를 통해 1바이트 읽어옴
-        return -1;
-    return x; //읽어온 데이터 반환
-}
-
-void serialWrite(const int fd, const unsigned char *c)
-{
-    write (fd, c, strlen(c));
-}
-
-//ADXL345
-void readRegister_ADXL345(char registerAddress, int numBytes, char * values)
-{
-    //read 1 .
-    values[0] = 0x80 | registerAddress;
-    // 6 1
-    if(numBytes > 1) values[0] = values[0] | 0x40;
-    digitalWrite(CS_GPIO, LOW); // Low : CS Active
-    // values
-    wiringPiSPIDataRW(SPI_CH, values, numBytes + 1);
-    digitalWrite(CS_GPIO, HIGH); // High : CS Inactive
-}
-//ADXL345
-void writeRegister_ADXL345(char address, char value)
-{
-    unsigned char buff[2];
-    buff[0] = address;
-    buff[1] = value;
-    digitalWrite(CS_GPIO, LOW); // Low : CS Active
-    wiringPiSPIDataRW(SPI_CH, buff, 2);
-    digitalWrite(CS_GPIO, HIGH); // High : CS Inactive
-}
-
 
 void *gearFunc(void *arg){
 
@@ -198,7 +199,10 @@ void *gearFunc(void *arg){
             printf("받은 데이터 : %c\n", dat3);
         }
 
-        if(dat3 == 7){
+        if(dat3 == '7'){
+            pthread_mutex_lock(&mid);
+            crash++;
+            pthread_mutex_unlock(&mid);
             break;
         }
         if(ch == 100 && pedal == 0){
@@ -235,9 +239,7 @@ void *gearFunc(void *arg){
             delay(200);
         }
     }
-    return NULL;
 }
-
 void *pedalFunc(void *arg){
 
     unsigned char dat3;
@@ -249,7 +251,10 @@ void *pedalFunc(void *arg){
             printf("받은 데이터 : %c\n", dat3);
         }
 
-        if(dat3 == 7){
+        if(dat3 == '7'){
+            pthread_mutex_lock(&mid);
+            crash++;
+            pthread_mutex_unlock(&mid);
             break;
         }
         if(gear == 2 && ch == 103){
@@ -268,6 +273,7 @@ void *pedalFunc(void *arg){
             printf("%d\n",distance);
         }
         else if(gear == 1 && ch == 103){
+            serialWrite(fd_serial, "G\n");
             pthread_mutex_lock(&mid);
             pedal = 1;
             pthread_mutex_unlock(&mid);
@@ -288,7 +294,6 @@ void *pedalFunc(void *arg){
             pthread_mutex_unlock(&mid);
             delay(200);
         }
-
     }
     return NULL;
 }
@@ -296,48 +301,53 @@ void *pedalFunc(void *arg){
 void *warningFunc(void *arg){
     unsigned char dat3;
     while(1){
+
         if (serialDataAvail(fd_serial))
         {
             dat3 = serialRead(fd_serial);
             printf("받은 데이터 : %c\n", dat3);
         }
 
-        if(dat3 == 1){
+        if(dat3== '1'){
             digitalWrite(LED_L, HIGH);
-            if (!digitalRead(BUZZER)){
-                digitalWrite(BUZZER, HIGH);
-            }
+            
         }
-        if(dat3 == 2){//off
+        if(dat3== '2'){//off
             digitalWrite(LED_L, LOW);
-            digitalWrite(BUZZER, LOW);
+
         }
-        if(dat3 == 3){
+        if(dat3== '3'){
             digitalWrite(LED_R, HIGH);
-            if (!digitalRead(BUZZER)){
-                digitalWrite(BUZZER, HIGH);
-            }
+
         }
-        if(dat3 == 4){//off
+        if(dat3== '4'){//off
             digitalWrite(LED_R, LOW);
-            digitalWrite(BUZZER, LOW);
+
         }
-        if(dat3 == 5){
+        if(dat3== '5'){
             digitalWrite(LED_BACK, HIGH);
+            
+        }
+        if(dat3== '6'){//off
+            digitalWrite(LED_BACK, LOW);
+        }
+        if (digitalRead(LED_L) || digitalRead(LED_R) || digitalRead(LED_BACK)){
             if (!digitalRead(BUZZER)){
                 digitalWrite(BUZZER, HIGH);
             }
         }
-        if(dat3 == 6){//off
-            digitalWrite(LED_BACK, LOW);
-            digitalWrite(BUZZER, LOW);
+        if (!digitalRead(LED_L) && !digitalRead(LED_R) && !digitalRead(LED_BACK)){
+            if (digitalRead(BUZZER)){
+                digitalWrite(BUZZER, LOW);
+            }
         }
-        if(dat3 == 7){
+        if(dat3 == '7'){
+            pthread_mutex_lock(&mid);
+            crash++;
+            pthread_mutex_unlock(&mid);
             break;
         }
-
     }
-    digitalWrite(BUZZER, LOW);
     return NULL;
 }
 
@@ -357,7 +367,10 @@ void *steeringFunc(void *arg){
             printf("받은 데이터 : %c\n", dat3);
         }
 
-        if(dat3 == 7){
+        if(dat3 == '7'){
+            pthread_mutex_lock(&mid);
+            crash++;
+            pthread_mutex_unlock(&mid);
             break;
         }
 
@@ -385,7 +398,6 @@ void *steeringFunc(void *arg){
         printf("roll : %f\n", roll);
 
         delay(200);
-
     }
     return NULL;
 }
