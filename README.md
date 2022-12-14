@@ -2,7 +2,7 @@
 
 **초보 운전자를 위한 주차 시뮬레이터**
 
--   2022-2학기 임베디드시스템 2분반 3조 GNU
+-   2022-2학기 임베디드시스템 2분반 3조 GNU (Group Name U기)
 
 ## Issue!! 개발 시 문제점 및 해결 방안
 
@@ -10,7 +10,6 @@
     ~~일부 해결~~ (2022.12.10) (유니티에서 라즈베리파이로 데이터 가져오는 과정에서 Segmentation fault 발생)  
     해결 (2022.12.11) (유니티 -> 라즈베리 파이 데이터 전송 세그멘테이션 오류 수정, 데이터 전송할 때 발생되는 이상한 공백문자들 자체가 안생기게 송수신 함수들을 새로 구현)
 
-2.
 
 ## 업무 분장
 
@@ -22,7 +21,13 @@
 
 -   역할 변동은 유연하게 있을 수 있음
 
-## (아이디어 소개) 기능 소개
+## 아이디어 소개
+
+  라즈베리파이와 유니티를 이용하여 초보운전자를 위한 주차 시뮬레이터를 제작하였다. 1인칭 시점이 아닌 3인칭 시점으로 위에서 아래로 내려다보는 느낌으로 시뮬레이터를 구성하여 실제 운전을 하기 이전 감각을 기르기 위한 시뮬레이터로 제작하였다.
+
+## 전체 시스템 구조
+
+-   사용 모듈을 적을 것인가..?
 
 ## 개발 일정(12/3 ~ 12/15)
 
@@ -44,11 +49,126 @@ gantt
 
 ## 제한 사항 구현 내용 (멀티프로세스/쓰레드, IPC/뮤텍스)
 
-## 전체 시스템 구조
+### 1. 멀티 쓰레드 관련 구현 내용
 
--   사용 모듈을 적을 것인가..?
+```c
+void *gearFunc(void *);     // 기어 스위치 처리 함수
+void *pedalFunc(void *);    // 액셀, 브레이크 페달 처리 함수
+void *warningFunc(void *);  // 주의 관련 처리 함수 (경고음부저, 경고표시LED)
+void *steeringFunc(void *); // 핸들 처리 함수
+```
+자식 쓰레드에서 사용할 함수들을 각각 정의해준다.
+
+```c
+// ...
+    pthread_t ptGear, ptPedal ,ptSteering, ptWarning;
+    pthread_mutex_init(&mid, NULL);
+
+    pthread_create(&ptGear, NULL, gearFunc, NULL);
+    pthread_create(&ptPedal, NULL, pedalFunc, NULL);
+    pthread_create(&ptWarning, NULL, warningFunc, NULL);
+    pthread_create(&ptSteering, NULL, steeringFunc, NULL);
+    
+    // ...
+    
+    pthread_join(ptGear, NULL);
+    pthread_join(ptPedal, NULL);
+    pthread_join(ptWarning, NULL);
+    pthread_join(ptSteering, NULL);
+
+    pthread_mutex_destroy(&mid);
+// ...
+```
+
+### 2. 뮤텍스 관련 구현 내용
+```c
+int gear = 0;  // 0: P, 1: R, 2: D
+int pedal = 0; // 0: Brake, 1: Gas
+int ch = 0;    // P, R, D, Brake Pedal, Gas Pedal
+int crash = 0; // 자식 스레드들을 멈추고, 프로그램을 종료하기 위한 변수
+```
+해당 프로그램에서 사용하는 공유 변수들이다. 이 값들이 제대로 계산되지 않으면 쓰레드들이 종료되지 않아 영원히 프로그램이 끝나지 않을 수 있다.
+
+```c
+// ...
+        if (serialDataAvail(fd_serial)){
+            dat3 = serialRead(fd_serial);
+            printf("받은 데이터 : %c\n", dat3);
+        }
+
+        if(dat3 == '7'){
+            pthread_mutex_lock(&mid);
+            crash++;
+            pthread_mutex_unlock(&mid);
+            break;
+        }
+// ...
+```
+쓰레드들끼리 충돌이 나서 연산이 되지 않는 것을 방지하기 위해 공유변수가 사용되는 임계 영역에 뮤텍스 lock을 걸어준다.
+
+```c
+void *gearFunc(void *arg){
+
+    unsigned char dat3;
+        
+    while(1){
+        if (serialDataAvail(fd_serial)){
+            dat3 = serialRead(fd_serial);
+            printf("받은 데이터 : %c\n", dat3);
+        }
+        if(dat3 == '7'){
+            pthread_mutex_lock(&mid);
+            crash++;
+            pthread_mutex_unlock(&mid);
+            break;
+        }
+        if(ch == 100 && pedal == 0){
+            serialWrite(fd_serial, "D\n");
+            pthread_mutex_lock(&mid);
+            gear = 2;
+            pthread_mutex_unlock(&mid);
+            delay(200);
+            pthread_mutex_lock(&mid);
+            ch = 0;
+            pthread_mutex_unlock(&mid);
+            delay(200);
+        }
+        else if(ch == 114 && pedal == 0){
+            serialWrite(fd_serial, "R\n");
+            pthread_mutex_lock(&mid);
+            gear = 1;
+            pthread_mutex_unlock(&mid);
+            delay(200);
+            pthread_mutex_lock(&mid);
+            ch = 0;
+            pthread_mutex_unlock(&mid);
+            delay(200);
+        }
+        else if(ch == 112 && pedal == 0){
+            serialWrite(fd_serial, "P\n");
+            pthread_mutex_lock(&mid);
+            gear = 0;
+            pthread_mutex_unlock(&mid);
+            delay(200);
+            pthread_mutex_lock(&mid);
+            ch = 0;
+            pthread_mutex_unlock(&mid);
+            delay(200);
+        }
+    }
+}
+```
+여러 처리 함수 중 기어 변환 처리를 하는 함수인 gearFunc의 모습이다.
+
+
 
 ## 데모 영상
+
+- **사고 버전**  
+https://www.youtube.com/watch?v=ugl6CPhcHsQ
+
+- **베스트 드라이버 버전**  
+https://www.youtube.com/watch?v=FYrLk8sjMGM
 
 ## 회의 내용
 
