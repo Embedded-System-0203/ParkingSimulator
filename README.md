@@ -4,6 +4,18 @@
 
 -   2022-2학기 임베디드시스템 2분반 3조 GNU (Group Name U기)
 
+## 실행 방법
+
+- 컴파일
+```bash
+$ gcc -o thread thread.c -lm -lpthread -lwiringPi
+```
+
+- 실행
+```bash
+$ sudo ./thread
+```
+
 ## Issue!! 개발 시 문제점 및 해결 방안
 
 1. 2022.12.05 시리얼 포트 연결 이상 문제 : ~~보류~~ (2022.12.06 - 시리얼 to usb 모듈 구매)  
